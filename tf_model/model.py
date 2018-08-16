@@ -4,23 +4,21 @@ import tensorflow as tf
 class Model(object):
 
     @staticmethod
-    def get_input_fn(X, y, num_epochs=None, batch_size=None, shuffle=False):
-        if batch_size:
-            return tf.estimator.inputs.numpy_input_fn(
-                x=X,
-                y=y,
-                num_epochs=num_epochs,
-                batch_size=batch_size,
-                shuffle=shuffle
-            )
+    def train_input_fn(features, labels, batch_size):
+        """An input function for training"""
+        dataset = tf.data.Dataset.from_tensor_slices((dict(features), labels))
+        dataset = dataset.shuffle(1000).batch(batch_size).repeat()
+        return dataset.make_one_shot_iterator().get_next()
+
+    @staticmethod
+    def eval_input_fn(features, labels, batch_size):
+        """An input function for evaluation"""
+        if labels is None:
+            dataset = tf.data.Dataset.from_tensor_slices((dict(features)))
         else:
-            return tf.estimator.inputs.numpy_input_fn(
-                x=X,
-                y=y,
-                num_epochs=num_epochs,
-                shuffle=shuffle
-            )
-    
+            dataset = tf.data.Dataset.from_tensor_slices((dict(features), labels))
+        return dataset.batch(batch_size)
+
     @staticmethod
     def rename_dup_cols(df, features, label, dup_cols_map):
         '''Deal with duplicate columns from same base

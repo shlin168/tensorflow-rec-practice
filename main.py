@@ -6,8 +6,6 @@ import time
 import os
 from datetime import timedelta
 from sklearn.model_selection import train_test_split
-
-from preprocess.data import Data
 from preprocess.features import Feature_engineering
 from tf_model.tf_feature_builder import FeatureColumnsBuilder
 from tf_model.model import Model
@@ -17,7 +15,7 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"]="3"
 def main():
     start_time = time.time()
     print('read data ...')
-    data = Data.read_data('rec_data.csv')
+    data = pd.read_csv('dataset/rec_data.csv', low_memory=False)
 
     print('feature engineering ...')
     features = Feature_engineering.get_numeric_features(data)
@@ -29,7 +27,7 @@ def main():
                         'segmentation', 'age', 'seniority']
     data = Feature_engineering.fillna(data, features, -1)
     data = Feature_engineering.float2int(data, float2int_list)
-    train_data, _ = Data.get_train_test_data(data)
+    train_data = data[(data['partition'] != '2016-06-28') & data['product'].notnull()]
     train_data = Feature_engineering.label_encoder(train_data, 'product', 'product_code')
 
     feature_dict = {
@@ -52,7 +50,7 @@ def main():
 
     # params for input
     BATCH_SIZE = 300000
-    SHUFFLE = True
+    VALID_ROWS = len(X_valid)
     dup_cols_map = {
         'bucket': ['age']
     }
@@ -60,8 +58,6 @@ def main():
     # get input
     train_X, train_y = Model.rename_dup_cols(train_dataset, features, label, dup_cols_map)
     valid_X, valid_y = Model.rename_dup_cols(valid_dataset, features, label, dup_cols_map)
-    train_input_fn  = Model.get_input_fn(train_X, train_y, None, BATCH_SIZE, SHUFFLE)
-    valid_input_fn = Model.get_input_fn(valid_X, valid_y, 1, None, False)
 
     # params for model
     N_CLASSES = train_data[label].nunique()
@@ -70,7 +66,7 @@ def main():
     # create model
     classifier = tf.estimator.Estimator(
         model_fn = Model.create_model,
-        model_dir = 'mymodel1',
+        model_dir = 'my_model',
         config = tf.estimator.RunConfig(
                 save_checkpoints_steps=50,
                 save_summary_steps=10
@@ -93,14 +89,16 @@ def main():
     print('start training ...')
     for n in range(EPOCHS):
         classifier.train(
-            input_fn = train_input_fn,
+            input_fn = lambda: Model.train_input_fn(train_X, train_y, BATCH_SIZE),
             steps = 10
         )
-        results = classifier.evaluate(input_fn = valid_input_fn)
+        results = classifier.evaluate(
+            input_fn = lambda: Model.eval_input_fn(valid_X, valid_y, VALID_ROWS)
+        )
         
         if (n+1) % DISPLAY_STEPS == 0:
             print(n + 1, 'rounds')
-            # Display evaluation metrics
+            # display evaluation metrics
             print('Results at epoch', (n + 1) * DISPLAY_STEPS)
             print('-' * 30)
             for key in sorted(results):
